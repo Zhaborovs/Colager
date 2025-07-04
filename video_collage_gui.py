@@ -2,6 +2,7 @@ import os
 import sys
 import threading
 import time
+import math
 try:
     import cv2
 except ImportError:
@@ -33,7 +34,7 @@ class VideoCollageGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Создание коллажей из видео")
-        self.root.geometry("600x540")
+        self.root.geometry("600x580")
         self.root.resizable(True, True)
         
         # Переменные
@@ -42,6 +43,7 @@ class VideoCollageGUI:
         self.processing = False
         self.video_files = []
         self.aspect_var = tk.StringVar(value="16:9")  # Новая переменная для формата
+        self.num_images_var = tk.IntVar(value=9)  # Новая переменная для количества картинок
         
         self.setup_ui()
         self.check_folders()
@@ -68,21 +70,28 @@ class VideoCollageGUI:
         ttk.Radiobutton(aspect_frame, text="16:9 (горизонтальный)", variable=self.aspect_var, value="16:9").pack(side=tk.LEFT)
         ttk.Radiobutton(aspect_frame, text="9:16 (вертикальный)", variable=self.aspect_var, value="9:16").pack(side=tk.LEFT)
         
+        # Количество картинок
+        ttk.Label(main_frame, text="Картинок в коллаже:").grid(row=2, column=0, sticky="w", pady=5)
+        num_images_cb = ttk.Combobox(main_frame, textvariable=self.num_images_var, state="readonly", width=10)
+        num_images_cb['values'] = (4, 6, 9, 12, 16)
+        num_images_cb.grid(row=2, column=1, sticky="w", pady=5)
+        num_images_cb.current(2)  # по умолчанию 9
+        
         # Папка с видео
-        ttk.Label(main_frame, text="Папка с видео:").grid(row=2, column=0, sticky="w", pady=5)
+        ttk.Label(main_frame, text="Папка с видео:").grid(row=3, column=0, sticky="w", pady=5)
         video_entry = ttk.Entry(main_frame, textvariable=self.video_folder, width=40)
-        video_entry.grid(row=2, column=1, sticky="ew", padx=(10, 5), pady=5)
-        ttk.Button(main_frame, text="Обзор", command=self.browse_video_folder).grid(row=2, column=2, pady=5)
+        video_entry.grid(row=3, column=1, sticky="ew", padx=(10, 5), pady=5)
+        ttk.Button(main_frame, text="Обзор", command=self.browse_video_folder).grid(row=3, column=2, pady=5)
         
         # Папка для коллажей
-        ttk.Label(main_frame, text="Папка для коллажей:").grid(row=3, column=0, sticky="w", pady=5)
+        ttk.Label(main_frame, text="Папка для коллажей:").grid(row=4, column=0, sticky="w", pady=5)
         output_entry = ttk.Entry(main_frame, textvariable=self.output_folder, width=40)
-        output_entry.grid(row=3, column=1, sticky="ew", padx=(10, 5), pady=5)
-        ttk.Button(main_frame, text="Обзор", command=self.browse_output_folder).grid(row=3, column=2, pady=5)
+        output_entry.grid(row=4, column=1, sticky="ew", padx=(10, 5), pady=5)
+        ttk.Button(main_frame, text="Обзор", command=self.browse_output_folder).grid(row=4, column=2, pady=5)
         
         # Кнопки управления
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=4, column=0, columnspan=3, pady=20)
+        button_frame.grid(row=5, column=0, columnspan=3, pady=20)
         
         self.refresh_btn = ttk.Button(button_frame, text="Обновить список", command=self.refresh_videos)
         self.refresh_btn.pack(side=tk.LEFT, padx=5)
@@ -91,7 +100,7 @@ class VideoCollageGUI:
         self.process_btn.pack(side=tk.LEFT, padx=5)
         
         # Список видео файлов
-        ttk.Label(main_frame, text="Найденные видео файлы:").grid(row=5, column=0, sticky="w", pady=(20, 5))
+        ttk.Label(main_frame, text="Найденные видео файлы:").grid(row=6, column=0, sticky="w", pady=(20, 5))
         
         # Создаем Treeview для списка файлов
         columns = ("Имя файла", "Размер", "Длительность")
@@ -106,36 +115,36 @@ class VideoCollageGUI:
         self.video_tree.column("Размер", width=100)
         self.video_tree.column("Длительность", width=100)
         
-        self.video_tree.grid(row=6, column=0, columnspan=3, sticky="nsew", pady=5)
+        self.video_tree.grid(row=7, column=0, columnspan=3, sticky="nsew", pady=5)
         
         # Скроллбар для списка
         scrollbar = ttk.Scrollbar(main_frame, orient=tk.VERTICAL, command=self.video_tree.yview)
-        scrollbar.grid(row=6, column=3, sticky="ns")
+        scrollbar.grid(row=7, column=3, sticky="ns")
         self.video_tree.configure(yscrollcommand=scrollbar.set)
         
         # Прогресс бар
-        ttk.Label(main_frame, text="Прогресс:").grid(row=7, column=0, sticky="w", pady=(20, 5))
+        ttk.Label(main_frame, text="Прогресс:").grid(row=8, column=0, sticky="w", pady=(20, 5))
         self.progress = ttk.Progressbar(main_frame, mode='determinate')
-        self.progress.grid(row=8, column=0, columnspan=3, sticky="ew", pady=5)
+        self.progress.grid(row=9, column=0, columnspan=3, sticky="ew", pady=5)
         
         # Статус
         self.status_var = tk.StringVar(value="Готов к работе")
         status_label = ttk.Label(main_frame, textvariable=self.status_var, font=("Arial", 10))
-        status_label.grid(row=9, column=0, columnspan=3, pady=10)
+        status_label.grid(row=10, column=0, columnspan=3, pady=10)
         
         # Лог
-        ttk.Label(main_frame, text="Лог операций:").grid(row=10, column=0, sticky="w", pady=(20, 5))
+        ttk.Label(main_frame, text="Лог операций:").grid(row=11, column=0, sticky="w", pady=(20, 5))
         self.log_text = tk.Text(main_frame, height=6, width=70)
-        self.log_text.grid(row=11, column=0, columnspan=3, sticky="nsew", pady=5)
+        self.log_text.grid(row=12, column=0, columnspan=3, sticky="nsew", pady=5)
         
         # Скроллбар для лога
         log_scrollbar = ttk.Scrollbar(main_frame, orient=tk.VERTICAL, command=self.log_text.yview)
-        log_scrollbar.grid(row=11, column=3, sticky="ns")
+        log_scrollbar.grid(row=12, column=3, sticky="ns")
         self.log_text.configure(yscrollcommand=log_scrollbar.set)
         
         # Настройка весов для растягивания
-        main_frame.rowconfigure(6, weight=1)
-        main_frame.rowconfigure(11, weight=1)
+        main_frame.rowconfigure(7, weight=1)
+        main_frame.rowconfigure(12, weight=1)
         
     def log_message(self, message):
         """Добавляет сообщение в лог"""
@@ -225,8 +234,10 @@ class VideoCollageGUI:
         self.log_message(f"Найдено {len(self.video_files)} видео файлов")
         self.status_var.set(f"Найдено {len(self.video_files)} видео файлов")
         
-    def extract_screenshots(self, video_path, num_screenshots=9):
+    def extract_screenshots(self, video_path, num_screenshots=None):
         """Извлекает указанное количество скриншотов из видео"""
+        if num_screenshots is None:
+            num_screenshots = self.num_images_var.get()
         cap = cv2.VideoCapture(video_path)
         
         if not cap.isOpened():
@@ -253,29 +264,50 @@ class VideoCollageGUI:
         return screenshots
         
     def create_collage(self, screenshots, output_path):
-        """Создает коллаж из скриншотов 3x3 с нужным соотношением сторон"""
-        if len(screenshots) != 9:
+        """Создает коллаж из скриншотов с сохранением пропорций и нужным соотношением сторон"""
+        import math
+        num_images = self.num_images_var.get()
+        if len(screenshots) != num_images:
             return False
-        
-        base_height, base_width = screenshots[0].shape[:2]
-        target_size = min(base_width, base_height)
-        
-        collage_width = target_size * 3
-        collage_height = target_size * 3
-        collage = np.zeros((collage_height, collage_width, 3), dtype=np.uint8)
-        
-        for i, screenshot in enumerate(screenshots):
-            row = i // 3
-            col = i % 3
-            resized = cv2.resize(screenshot, (target_size, target_size))
-            y_start = row * target_size
-            y_end = (row + 1) * target_size
-            x_start = col * target_size
-            x_end = (col + 1) * target_size
-            collage[y_start:y_end, x_start:x_end] = resized
-        
-        # --- Новый код: вписываем в холст с нужным соотношением сторон ---
+        # Вычисляем наиболее квадратную сетку
+        cols = math.ceil(math.sqrt(num_images))
+        rows = math.ceil(num_images / cols)
+        # --- Масштабируем кадры с сохранением пропорций ---
+        # Сначала определим высоту для всех кадров в строке
+        min_height = min(frame.shape[0] for frame in screenshots)
+        min_width = min(frame.shape[1] for frame in screenshots)
+        # Для горизонтальных коллажей (16:9) — приводим к одной высоте, для вертикальных (9:16) — к одной ширине
         aspect = self.aspect_var.get()
+        if aspect == '16:9':
+            # Приводим к одной высоте
+            target_h = min_height
+            resized = [cv2.resize(frame, (int(frame.shape[1] * target_h / frame.shape[0]), target_h)) for frame in screenshots]
+        else:
+            # Приводим к одной ширине
+            target_w = min_width
+            resized = [cv2.resize(frame, (target_w, int(frame.shape[0] * target_w / frame.shape[1]))) for frame in screenshots]
+        # --- Собираем сетку ---
+        grid = []
+        for r in range(rows):
+            row_imgs = resized[r*cols:(r+1)*cols]
+            if not row_imgs:
+                continue
+            # Для каждой строки приводим к одной высоте (16:9) или ширине (9:16)
+            if aspect == '16:9':
+                h = min(img.shape[0] for img in row_imgs)
+                row_imgs = [cv2.resize(img, (int(img.shape[1] * h / img.shape[0]), h)) for img in row_imgs]
+                row = np.hstack(row_imgs)
+            else:
+                w = min(img.shape[1] for img in row_imgs)
+                row_imgs = [cv2.resize(img, (w, int(img.shape[0] * w / img.shape[1]))) for img in row_imgs]
+                row = np.vstack(row_imgs)
+            grid.append(row)
+        # Склеиваем строки/столбцы
+        if aspect == '16:9':
+            collage = np.vstack(grid)
+        else:
+            collage = np.hstack(grid)
+        # --- Вписываем в холст с нужным соотношением сторон ---
         if aspect == '16:9':
             target_w, target_h = 1920, 1080
         else:
@@ -301,7 +333,7 @@ class VideoCollageGUI:
                 
             total_files = len(self.video_files)
             self.progress["maximum"] = total_files
-            
+            num_images = self.num_images_var.get()
             for i, video_file in enumerate(self.video_files):
                 if not self.processing:  # Проверка на остановку
                     break
@@ -311,9 +343,9 @@ class VideoCollageGUI:
                 
                 try:
                     video_full_path = os.path.join(video_path, video_file)
-                    screenshots = self.extract_screenshots(video_full_path, 9)
+                    screenshots = self.extract_screenshots(video_full_path, num_images)
                     
-                    if len(screenshots) == 9:
+                    if len(screenshots) == num_images:
                         base_name = os.path.splitext(video_file)[0]
                         output_file = os.path.join(output_path, f"{base_name}.jpg")
                         
@@ -322,7 +354,7 @@ class VideoCollageGUI:
                         else:
                             self.log_message(f"❌ Ошибка создания коллажа для {video_file}")
                     else:
-                        self.log_message(f"❌ Не удалось извлечь 9 скриншотов из {video_file}")
+                        self.log_message(f"❌ Не удалось извлечь {num_images} скриншотов из {video_file}")
                         
                 except Exception as e:
                     self.log_message(f"❌ Ошибка при обработке {video_file}: {str(e)}")
